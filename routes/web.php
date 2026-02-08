@@ -52,6 +52,12 @@ Route::prefix('api')->group(function () {
 
 // Admin Presentation CRUD Routes
 Route::middleware(['auth'])->group(function () {
+    // User Management (Admin only)
+    Route::middleware(['admin'])->group(function () {
+        Route::resource('users', \App\Http\Controllers\UserController::class)
+            ->only(['index', 'create', 'store', 'destroy']);
+    });
+
     Route::resource('presentations', PresentationController::class);
 
     Route::post('presentations/{presentation}/questions/reorder', [QuestionController::class, 'reorder'])

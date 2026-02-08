@@ -66,7 +66,14 @@ class FortifyServiceProvider extends ServiceProvider
             'status' => $request->session()->get('status'),
         ]));
 
-        Fortify::registerView(fn () => Inertia::render('auth/Register'));
+        Fortify::registerView(function (Request $request) {
+            // Only allow authenticated admin users to access registration
+            if (! $request->user() || ! $request->user()->isAdmin()) {
+                return redirect('/login')->with('error', 'Registration is restricted to administrators only.');
+            }
+
+            return Inertia::render('auth/Register');
+        });
 
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/TwoFactorChallenge'));
 

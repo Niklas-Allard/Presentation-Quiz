@@ -17,6 +17,8 @@ const currentQuestionIndex = ref(-1);
 const showSolution = ref(false);
 const qrCodeDataUrl = ref('');
 const isFullscreen = ref(false);
+const timeRemaining = ref(0);
+let timerInterval: number | null = null;
 
 const currentQuestion = computed(() => {
     if (currentQuestionIndex.value >= 0 && currentQuestionIndex.value < props.presentation.questions.length) {
@@ -47,9 +49,31 @@ async function generateQRCode() {
     }
 }
 
+// Timer functions
+function startTimer(seconds: number) {
+    stopTimer();
+    timeRemaining.value = seconds;
+
+    timerInterval = setInterval(() => {
+        if (timeRemaining.value > 0) {
+            timeRemaining.value--;
+        } else {
+            stopTimer();
+        }
+    }, 1000);
+}
+
+function stopTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+}
+
 // Navigation functions
 function goToNextQuestion() {
     showSolution.value = false;
+    stopTimer();
     if (currentScreen.value === 'welcome') {
         currentScreen.value = 'question';
         currentQuestionIndex.value = 0;
@@ -62,8 +86,12 @@ function goToNextQuestion() {
 
 function goToPreviousQuestion() {
     showSolution.value = false;
+    stopTimer();
     if (currentQuestionIndex.value > 0) {
         currentQuestionIndex.value--;
+        if (currentQuestion.value) {
+            startTimer(currentQuestion.value.time_limit_seconds);
+        }
     } else if (currentQuestionIndex.value === 0) {
         currentScreen.value = 'welcome';
         currentQuestionIndex.value = -1;
@@ -74,13 +102,17 @@ function toggleSolution() {
     if (currentQuestion.value) {
         showSolution.value = !showSolution.value;
         if (showSolution.value) {
+            stopTimer();
             endCurrentQuestion();
+        } else {
+            startTimer(currentQuestion.value.time_limit_seconds);
         }
     }
 }
 
 function startCurrentQuestion() {
     if (currentQuestion.value) {
+        startTimer(currentQuestion.value.time_limit_seconds);
         router.post(`/presentations/${props.presentation.id}/questions/${currentQuestion.value.id}/start`, {}, {
             preserveState: true,
         });
@@ -157,6 +189,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     window.removeEventListener('keydown', handleKeyPress);
+    stopTimer();
 });
 
 // Real-time updates
@@ -262,9 +295,19 @@ usePresentationChannel(props.presentation.id, {
                     </div>
                 </div>
 
-                <!-- Time Indicator -->
-                <div class="text-center text-gray-400 text-xl mt-8">
-                    ⏱ {{ currentQuestion.time_limit_seconds }} seconds
+                <!-- Countdown Timer -->
+                <div class="text-center mt-8">
+                    <div
+                        :class="[
+                            'inline-flex items-center gap-3 px-8 py-4 rounded-full text-3xl font-bold transition-all duration-300',
+                            timeRemaining > 10 ? 'bg-blue-600/30 text-blue-300' :
+                            timeRemaining > 5 ? 'bg-yellow-600/30 text-yellow-300' :
+                            'bg-red-600/30 text-red-300 animate-pulse'
+                        ]"
+                    >
+                        <span class="text-4xl">⏱</span>
+                        <span>{{ timeRemaining }}s</span>
+                    </div>
                 </div>
             </div>
         </div>
