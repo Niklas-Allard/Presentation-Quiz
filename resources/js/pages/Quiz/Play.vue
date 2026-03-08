@@ -21,6 +21,9 @@ const leaderboard = ref<LeaderboardEntry[]>([]);
 const myRank = ref<{ rank: number; score: number } | null>(null);
 const isWaiting = ref(true);
 const questionStartTime = ref<number | null>(null);
+const pendingPointsEarned = ref<number | null>(null);
+const pendingLeaderboard = ref<LeaderboardEntry[]>([]);
+const pendingMyRank = ref<{ rank: number; score: number } | null>(null);
 
 let timerInterval: number | null = null;
 
@@ -90,13 +93,8 @@ async function submitAnswer(optionId: number) {
             console.log('🎯 Was answer correct?', data.is_correct);
             console.log('💰 Points earned:', data.points_earned);
 
-            if (data.is_correct) {
-                console.log('🎉 CORRECT ANSWER! Leaderboard should update now.');
-                // Fetch updated leaderboard and rank
-                setTimeout(() => {
-                    fetchLeaderboard();
-                    fetchMyRank();
-                }, 1000);
+            if (data.is_correct && data.points_earned) {
+                pendingPointsEarned.value = data.points_earned;
             }
         } else {
             const error = await response.json();
@@ -126,17 +124,40 @@ function handleQuestionEnded(event: QuizQuestionEndedEvent) {
     if (timerInterval) clearInterval(timerInterval);
     timeRemaining.value = 0;
 
+    // Apply buffered leaderboard/rank updates now that the answer is revealed
+    if (pendingLeaderboard.value.length > 0) {
+        leaderboard.value = pendingLeaderboard.value;
+        pendingLeaderboard.value = [];
+    }
+    if (pendingMyRank.value !== null) {
+        myRank.value = pendingMyRank.value;
+        pendingMyRank.value = null;
+    }
+
     console.log('Question ended, showing results for 5 seconds...');
 
     // Show results for a moment before clearing
     setTimeout(() => {
         currentQuestion.value = null;
         isWaiting.value = true;
+        pendingPointsEarned.value = null;
         console.log('⏳ Now in waiting state. isWaiting:', isWaiting.value, 'leaderboard entries:', leaderboard.value.length, 'myRank:', myRank.value);
     }, 5000);
 }
 
 function handleLeaderboardUpdated(event: { leaderboard: LeaderboardEntry[] }) {
+    if (currentQuestion.value !== null) {
+        // Buffer updates while a question is active — show scores only after reveal
+        pendingLeaderboard.value = event.leaderboard;
+        if (participantId.value) {
+            const myEntry = event.leaderboard.find(e => e.participant_id === participantId.value);
+            if (myEntry) {
+                pendingMyRank.value = { rank: myEntry.rank, score: myEntry.score };
+            }
+        }
+        return;
+    }
+
     leaderboard.value = event.leaderboard;
 
     // Find my rank
@@ -163,7 +184,11 @@ async function fetchLeaderboard() {
         if (response.ok) {
             const data = await response.json();
             console.log('📦 Raw leaderboard data:', data);
-            leaderboard.value = data.leaderboard || [];
+            if (currentQuestion.value !== null) {
+                pendingLeaderboard.value = data.leaderboard || [];
+            } else {
+                leaderboard.value = data.leaderboard || [];
+            }
             console.log('📊 Leaderboard set to:', leaderboard.value.length, 'entries', leaderboard.value);
         } else {
             console.error('❌ Leaderboard request failed:', response.status, await response.text());
@@ -187,7 +212,11 @@ async function fetchMyRank() {
         if (response.ok) {
             const data = await response.json();
             console.log('📦 Raw rank data:', data);
-            myRank.value = { rank: data.rank, score: data.score };
+            if (currentQuestion.value !== null) {
+                pendingMyRank.value = { rank: data.rank, score: data.score };
+            } else {
+                myRank.value = { rank: data.rank, score: data.score };
+            }
             console.log('🏅 My rank set to:', myRank.value);
         } else {
             console.error('❌ Rank request failed:', response.status, await response.text());
@@ -371,6 +400,7 @@ onMounted(async () => {
                                 <div class="mb-3 text-6xl">🎉</div>
                                 <p class="text-3xl font-black text-green-400">Correct!</p>
                                 <p class="text-lg text-green-300 mt-2">Great job!</p>
+                                <p v-if="pendingPointsEarned" class="text-2xl font-bold text-green-200 mt-3">+{{ pendingPointsEarned }} Punkte!</p>
                             </div>
                             <div v-else class="bg-gradient-to-r from-red-500/20 to-rose-500/20 border-2 border-red-500/30 rounded-xl p-6">
                                 <div class="mb-3 text-6xl">❌</div>
